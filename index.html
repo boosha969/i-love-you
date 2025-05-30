@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="fa">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>تقدیم به کسی که تا ابد دوستش دارم </title>
+  <style>
+    body, html {
+      margin: 0; padding: 0;
+      overflow: hidden;
+      background: #000;
+      height: 100vh;
+      font-family: 'Courier New', Courier, monospace;
+      color: #ff69b4;
+      direction: rtl;
+    }
+
+    @font-face {
+        font-family: "vazir";
+        src: url(./fonts/Vazir-Bold.woff);
+    }
+    #canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #loveBtn {
+      position: absolute;
+      bottom: 20px; left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      font-size: 18px;
+      border: none;
+      border-radius: 5px;
+      background: rgba(255, 105, 180, 0.8);
+      color: #fff;
+      cursor: pointer;
+      z-index: 10;
+      user-select: none;
+    }
+    #loveBtn:active {
+      transform: translateX(-50%) scale(0.95);
+    }
+    /* استایل متن تایپ شده */
+    #loveText {
+      position: absolute;
+      /* bottom: 80px; بالاتر از دکمه */
+      top: 50%;
+     
+      right: 50%;
+     
+      /* margin: auto; */
+      /* transform: translateX(+50%); */
+      max-width: 90vw;
+      font-size: clamp(14px,1vw, 22px);
+      line-height: 1.4;
+      color: #ff00d4;
+      white-space: pre-wrap;
+      letter-spacing: 1.2px;
+      text-shadow: 0 0 5px #ff69b4;
+      z-index: 10;
+      user-select: none;
+      font-family: "vazir";
+
+      /* font-family: 'Courier New', Courier, monospace; */
+      min-height: 3em;
+      /* اضافه کردن خط چشمک زن شبیه ترمینال */
+      /* border-right: 2px solid #ff69b4;
+      animation: blinkCaret 0.8s step-end infinite; */
+    }
+    @keyframes blinkCaret {
+      from, to { border-color: transparent; }
+      50% { border-color: #ff69b4; }
+    }
+  </style>
+</head>
+<body>
+   
+    <canvas id="canvas"></canvas>
+    <button id="loveBtn">I Love You</button>
+  <div id="loveText"></div>
+  <audio id="loveSong" loop>
+    <source src="./music/_2ceb1c78-7204-4afd-82ca-b451ebcb4c21.mp3"   type="audio/mp3" />
+  </audio>
+
+  <script>
+    // ==== تنظیم canvas و WebGL ====
+    var canvas = document.getElementById("canvas");
+    var gl = canvas.getContext('webgl');
+    if (!gl) {
+      alert("مرورگر شما از WebGL پشتیبانی نمی‌کند.");
+      throw new Error("Unable to initialize WebGL.");
+    }
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+      gl.uniform1f(widthHandle, canvas.width);
+      gl.uniform1f(heightHandle, canvas.height);
+    });
+
+    resizeCanvas();
+
+    // ==== متغیرهای زمان و سرعت ====
+    var time = 0.0;
+    var speed = -0.2;
+
+    // ====== Shader sources ======
+    var vertexSource = `
+      attribute vec2 position;
+      void main() {
+        gl_Position = vec4(position, 0.0, 1.0);
+      }
+    `;
+
+    var fragmentSource = `
+      precision highp float;
+      uniform float width;
+      uniform float height;
+      uniform float time;
+      uniform float speed;
+
+      #define POINT_COUNT 8
+      const float len = 0.25;
+      float intensity = 1.3;
+      float radius = 0.008;
+
+      float sdBezier(vec2 pos, vec2 A, vec2 B, vec2 C){    
+          vec2 a = B - A;
+          vec2 b = A - 2.0*B + C;
+          vec2 c = 2.0 * a;
+          vec2 d = A - pos;
+          float kk = 1.0 / dot(b,b);
+          float kx = kk * dot(a,b);
+          float ky = kk * (2.0*dot(a,a)+dot(d,b)) / 3.0;
+          float kz = kk * dot(d,a);      
+          float res = 0.0;
+          float p = ky - kx*kx;
+          float p3 = p*p*p;
+          float q = kx*(2.0*kx*kx - 3.0*ky) + kz;
+          float h = q*q + 4.0*p3;
+          if (h >= 0.0) {
+              h = sqrt(h);
+              vec2 x = (vec2(h, -h) - q) / 2.0;
+              vec2 uv = sign(x)*pow(abs(x), vec2(1.0/3.0));
+              float t = clamp(uv.x + uv.y - kx, 0.0, 1.0);
+              vec2 qos = d + (c + b*t)*t;
+              res = length(qos);
+          } else {
+              float z = sqrt(-p);
+              float v = acos(q/(2.0*p*z)) / 3.0;
+              float m = cos(v), n = sin(v)*1.732050808;
+              vec3 t = vec3(m + m, -n - m, n - m) * z - kx;
+              t = clamp(t, 0.0, 1.0);
+              vec2 qos; float dis;
+              qos = d + (c + b*t.x)*t.x; dis = dot(qos,qos); res = dis;
+              qos = d + (c + b*t.y)*t.y; dis = dot(qos,qos); res = min(res,dis);
+              qos = d + (c + b*t.z)*t.z; dis = dot(qos,qos); res = min(res,dis);
+              res = sqrt(res);
+          }
+          return res;
+      }
+
+      vec2 getHeartPosition(float t){
+        return vec2(16.0*sin(t)*sin(t)*sin(t),
+                    -(13.0*cos(t) - 5.0*cos(2.0*t)
+                      -2.0*cos(3.0*t) - cos(4.0*t)));
+      }
+
+      float getGlow(float dist, float r, float inten){
+        return pow(r/dist, inten);
+      }
+
+      float getSegment(float t, vec2 pos, float offset, float scale){
+        vec2 points[POINT_COUNT];
+        for (int i = 0; i < POINT_COUNT; i++){
+          points[i] = getHeartPosition(offset + float(i)*len + fract(speed*t)*6.2831);
+        }
+        vec2 c = (points[0] + points[1]) * 0.5;
+        vec2 c_prev;
+        float dist = 1e4;
+        for (int i = 0; i < POINT_COUNT-1; i++){
+          c_prev = c;
+          c = (points[i] + points[i+1]) * 0.5;
+          dist = min(dist, sdBezier(pos, scale*c_prev, scale*points[i], scale*c));
+        }
+        return max(0.0, dist);
+      }
+
+      float rosePetal(vec2 p, float time){
+        float angle = atan(p.y, p.x);
+        float radius = length(p);
+        float open = smoothstep(0.0, 1.0, mod(time * 0.5, 1.0));
+        float petalShape = abs(sin(4.0 * angle)) - 0.3 * open;
+        float petal = radius - petalShape * 0.1;
+        return petal;
+      }
+
+      void main(){
+        vec2 uv = gl_FragCoord.xy / vec2(width, height);
+        float aspect = width / height;
+        vec2 pos = (vec2(0.5) - uv);
+        pos.y /= aspect;
+        pos.y += 0.02;
+        float scale = 0.000015 * height;
+        float t = time;
+
+        float dist = getSegment(t, pos, 0.0, scale);
+        float glow = getGlow(dist, radius, intensity);
+        vec3 col = vec3(0.0);
+
+        col += 10.0 * vec3(smoothstep(0.003, 0.001, dist));
+        col += glow * vec3(1.0, 0.05, 0.3);
+
+        dist = getSegment(t, pos, 3.4, scale);
+        glow = getGlow(dist, radius, intensity);
+        col += 10.0 * vec3(smoothstep(0.003, 0.001, dist));
+        col += glow * vec3(0.1, 0.4, 1.0);
+
+        vec2 rosePos = pos + vec2(0.0, 0.0);
+        float petalDist = rosePetal(rosePos * 30.0, time);
+        float petalGlow = smoothstep(0.01, 0.0, petalDist);
+
+        col += vec3(1.0, 0.2, 0.3) * petalGlow * (0.5 + 0.5 * sin(time * 3.0));
+
+        col = 1.0 - exp(-col);
+        col = pow(col, vec3(0.4545));
+
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `;
+
+    function compileShader(src, type) {
+      var s = gl.createShader(type);
+      gl.shaderSource(s, src);
+      gl.compileShader(s);
+      if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(s));
+      }
+      return s;
+    }
+    function getAttribLocation(prog, name) {
+      var loc = gl.getAttribLocation(prog, name);
+      if (loc === -1) throw new Error("Cannot find attribute " + name);
+      return loc;
+    }
+    function getUniformLocation(prog, name) {
+      var loc = gl.getUniformLocation(prog, name);
+      if (loc === null) throw new Error("Cannot find uniform " + name);
+      return loc;
+    }
+
+    var vShader = compileShader(vertexSource, gl.VERTEX_SHADER);
+    var fShader = compileShader(fragmentSource, gl.FRAGMENT_SHADER);
+    var program = gl.createProgram();
+    gl.attachShader(program, vShader);
+    gl.attachShader(program, fShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      throw new Error("Unable to link the shader program!");
+    }
+    gl.useProgram(program);
+
+    var vertexData = new Float32Array([
+      -1,  1,  -1, -1,
+       1,  1,   1, -1
+    ]);
+    var buffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+    var posLoc = getAttribLocation(program, 'position');
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+    var timeHandle   = getUniformLocation(program, 'time');
+    var widthHandle  = getUniformLocation(program, 'width');
+    var heightHandle = getUniformLocation(program, 'height');
+    var speedHandle  = getUniformLocation(program, 'speed');
+
+    gl.uniform1f(widthHandle, canvas.width);
+    gl.uniform1f(heightHandle, canvas.height);
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    var lastFrame = Date.now();
+    function draw(){
+      var now = Date.now();
+      time += (now - lastFrame) / 1000;
+      lastFrame = now;
+
+      gl.uniform1f(timeHandle, time);
+      gl.uniform1f(speedHandle, speed);
+
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      requestAnimationFrame(draw);
+    }
+    draw();
+
+    document.getElementById('loveBtn').addEventListener('click', function(){
+      speed = -1.2;
+      setTimeout(function(){
+        speed = 100;
+      }, 100);
+      audio.play().catch(() => {});
+    });
+
+    var audio = document.getElementById('loveSong');
+    window.addEventListener('load', () => {
+      audio.play().catch(e => {
+        console.log("موزیک خودکار پخش نشد، دکمه را بزنید");
+      });
+    });
+
+    // ==== تایپ متن عاشقانه به صورت خودکار ====
+
+    const loveText = document.getElementById('loveText');
+
+    const message = 
+`
+M F
+
+
+
+
+ `;
+
+    let index = 0;
+
+    function typeEffect() {
+      if (index <= message.length) {
+        loveText.textContent = message.slice(0, index);
+        index++;
+        setTimeout(typeEffect, 60);
+      } else {
+        // وقتی متن کامل شد، چند ثانیه مکث کن بعد دوباره پاک کن و تایپ کن
+        setTimeout(() => {
+          index = 0;
+          loveText.textContent = '';
+          typeEffect();
+        }, 4000);
+      }
+    }
+    typeEffect();
+    
+
+ const input = document.getElementById("commentInput");
+  const button = document.getElementById("sendComment");
+  const display = document.getElementById("commentDisplay");
+
+
+
+
+  </script>
+</body>
+</html>
